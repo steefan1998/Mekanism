@@ -6,6 +6,8 @@ import com.google.common.cache.LoadingCache;
 import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.Table;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.QuadInstance;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import it.unimi.dsi.fastutil.objects.Object2BooleanMap;
 import it.unimi.dsi.fastutil.objects.Object2BooleanMaps;
@@ -29,10 +31,8 @@ import mekanism.api.gear.IModule;
 import mekanism.api.gear.IModuleContainer;
 import mekanism.api.gear.IModuleHelper;
 import mekanism.api.gear.ModuleData;
-import mekanism.client.model.BaseModelCache.MekanismModelData;
 import mekanism.client.model.BaseModelCache.OBJModelData;
 import mekanism.client.model.MekanismModelCache;
-import mekanism.client.render.lib.QuadTransformation;
 import mekanism.client.render.lib.QuickHash;
 import mekanism.client.render.lib.effect.BoltRenderer;
 import mekanism.common.Mekanism;
@@ -47,10 +47,12 @@ import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
 import net.minecraft.client.renderer.entity.state.HumanoidRenderState;
+import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.resources.model.geometry.BakedQuad;
 import net.minecraft.core.Holder;
 import net.minecraft.resources.Identifier;
-import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.ElytraAnimationState;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.HumanoidArm;
@@ -60,7 +62,8 @@ import net.neoforged.neoforge.client.event.ModelEvent.BakingCompleted;
 import org.jetbrains.annotations.ApiStatus.Internal;
 import org.jspecify.annotations.Nullable;
 
-public class MekaSuitArmor implements ICustomArmor, ISpecialGear {
+//Note: Not named MekaSuitArmor so that Iris' outdated (1.21.1) @Pseudo compat mixin skips this class instead of crashing on load
+public class MekaSuitArmorRenderer implements ICustomArmor, ISpecialGear {
 
     private static final String LED_TAG = "led";
     private static final String INACTIVE_TAG = "inactive_";
@@ -69,16 +72,15 @@ public class MekaSuitArmor implements ICustomArmor, ISpecialGear {
     private static final String SHARED_TAG = "shared_";
     private static final String GLASS_TAG = "glass";
 
-    public static final MekaSuitArmor HELMET = new MekaSuitArmor(EquipmentSlot.HEAD, EquipmentSlot.CHEST);
-    public static final MekaSuitArmor BODYARMOR = new MekaSuitArmor(EquipmentSlot.CHEST, EquipmentSlot.HEAD);
-    public static final MekaSuitArmor PANTS = new MekaSuitArmor(EquipmentSlot.LEGS, EquipmentSlot.FEET);
-    public static final MekaSuitArmor BOOTS = new MekaSuitArmor(EquipmentSlot.FEET, EquipmentSlot.LEGS);
+    public static final MekaSuitArmorRenderer HELMET = new MekaSuitArmorRenderer(EquipmentSlot.HEAD, EquipmentSlot.CHEST);
+    public static final MekaSuitArmorRenderer BODYARMOR = new MekaSuitArmorRenderer(EquipmentSlot.CHEST, EquipmentSlot.HEAD);
+    public static final MekaSuitArmorRenderer PANTS = new MekaSuitArmorRenderer(EquipmentSlot.LEGS, EquipmentSlot.FEET);
+    public static final MekaSuitArmorRenderer BOOTS = new MekaSuitArmorRenderer(EquipmentSlot.FEET, EquipmentSlot.LEGS);
 
     private static final Table<EquipmentSlot, Holder<ModuleData<?>>, ModuleModelSpec> moduleModelSpec = HashBasedTable.create();
 
     private static final Map<UUID, BoltRenderer> boltRenderMap = new Object2ObjectOpenHashMap<>();
 
-    private static final QuadTransformation BASE_TRANSFORM = QuadTransformation.list(QuadTransformation.rotate(0, 0, 180), QuadTransformation.translate(-1, 0.5F, 0));
 
     private final LoadingCache<QuickHash, ArmorQuads> cache = CacheBuilder.newBuilder().build(new CacheLoader<>() {
         @Override
@@ -91,7 +93,7 @@ public class MekaSuitArmor implements ICustomArmor, ISpecialGear {
     private final EquipmentSlot type;
     private final EquipmentSlot adjacentType;
 
-    private MekaSuitArmor(EquipmentSlot type, EquipmentSlot adjacentType) {
+    private MekaSuitArmorRenderer(EquipmentSlot type, EquipmentSlot adjacentType) {
         this.type = type;
         this.adjacentType = adjacentType;
         MekanismModelCache.INSTANCE.reloadCallback(cache::invalidateAll);
@@ -106,23 +108,20 @@ public class MekaSuitArmor implements ICustomArmor, ISpecialGear {
           STATE state, ItemStack stack, boolean rightHand) {
         ModelPos armPos = rightHand ? ModelPos.RIGHT_ARM : ModelPos.LEFT_ARM;
         ArmorQuads armorQuads = cache.getUnchecked(key(state));
-        boolean hasOpaqueArm = armorQuads.opaqueQuads().containsKey(armPos);
-        boolean hasTransparentArm = armorQuads.transparentQuads().containsKey(armPos);
-        //TODO - 26.1 models
-        /*if (hasOpaqueArm || hasTransparentArm) {
+        List<BakedQuad> opaqueArm = armorQuads.opaqueQuads().get(armPos);
+        List<BakedQuad> transparentArm = armorQuads.transparentQuads().get(armPos);
+        if (opaqueArm != null || transparentArm != null) {
             poseStack.pushPose();
             armPos.translate(baseModel, poseStack, state);
-            PoseStack.Pose last = poseStack.last();
-            if (hasOpaqueArm) {
-                VertexConsumer builder = ItemRenderer.getFoilBuffer(nodeCollector, MekanismRenderType.MEKASUIT, false, stack.hasFoil());
-                putQuads(armorQuads.opaqueQuads().get(armPos), builder, last, lightCoords, getColor(stack));
+            armPos.transform(poseStack);
+            if (opaqueArm != null) {
+                submitQuads(nodeCollector, poseStack, opaqueArm, false, lightCoords, getColor(stack), stack.hasFoil());
             }
-            if (hasTransparentArm) {
-                VertexConsumer builder = ItemRenderer.getFoilBuffer(nodeCollector, RenderType.entityTranslucent(TextureAtlas.LOCATION_BLOCKS), false, stack.hasFoil());
-                putQuads(armorQuads.transparentQuads().get(armPos), builder, last, lightCoords, Color.WHITE);
+            if (transparentArm != null) {
+                submitQuads(nodeCollector, poseStack, transparentArm, true, lightCoords, Color.WHITE, stack.hasFoil());
             }
             poseStack.popPose();
-        }*/
+        }
     }
 
     @Override
@@ -170,41 +169,54 @@ public class MekaSuitArmor implements ICustomArmor, ISpecialGear {
 
     private <STATE extends HumanoidRenderState> void render(HumanoidModel<STATE> baseModel, SubmitNodeCollector nodeCollector, PoseStack poseStack, int lightCoords,
           Color color, boolean hasEffect, STATE state, Map<ModelPos, List<BakedQuad>> quadMap, boolean transparent) {
-        //TODO - 26.1 models
-        /*if (!quadMap.isEmpty()) {
-            RenderType renderType = transparent ? RenderType.entityTranslucent(TextureAtlas.LOCATION_BLOCKS) : MekanismRenderType.MEKASUIT;
-            VertexConsumer builder = ItemRenderer.getFoilBuffer(nodeCollector, renderType, false, hasEffect);
-            for (Map.Entry<ModelPos, List<BakedQuad>> entry : quadMap.entrySet()) {
-                poseStack.pushPose();
-                entry.getKey().translate(baseModel, poseStack, state);
-                putQuads(entry.getValue(), builder, poseStack.last(), lightCoords, color);
-                poseStack.popPose();
-            }
-        }*/
+        for (Map.Entry<ModelPos, List<BakedQuad>> entry : quadMap.entrySet()) {
+            poseStack.pushPose();
+            entry.getKey().translate(baseModel, poseStack, state);
+            entry.getKey().transform(poseStack);
+            submitQuads(nodeCollector, poseStack, entry.getValue(), transparent, lightCoords, color, hasEffect);
+            poseStack.popPose();
+        }
     }
 
-    /*private void putQuads(List<BakedQuad> quads, VertexConsumer builder, PoseStack.Pose pose, int lightCoords, Color color) {
-        for (BakedQuad quad : quads) {
-            builder.putBulkData(pose, quad, color.rf(), color.gf(), color.bf(), color.af(), lightCoords, OverlayTexture.NO_OVERLAY);
+    private static void submitQuads(SubmitNodeCollector nodeCollector, PoseStack poseStack, List<BakedQuad> quads, boolean transparent, int lightCoords,
+          Color color, boolean hasEffect) {
+        if (quads.isEmpty()) {
+            return;
         }
-    }*/
+        Identifier atlas = quads.getFirst().materialInfo().sprite().atlasLocation();
+        RenderType renderType = transparent ? RenderTypes.entityTranslucent(atlas) : RenderTypes.armorCutoutNoCull(atlas);
+        int argb = color.argb();
+        nodeCollector.submitCustomGeometry(poseStack, renderType, (pose, buffer) -> putQuads(quads, buffer, pose, lightCoords, argb));
+        if (hasEffect) {
+            nodeCollector.submitCustomGeometry(poseStack, RenderTypes.armorEntityGlint(), (pose, buffer) -> putQuads(quads, buffer, pose, lightCoords, argb));
+        }
+    }
 
-    private static List<BakedQuad> getQuads(MekanismModelData data, Set<String> parts, Set<String> ledParts, @Nullable QuadTransformation transform) {
-        RandomSource random = Minecraft.getInstance().level.getRandom();
+    private static void putQuads(List<BakedQuad> quads, VertexConsumer buffer, PoseStack.Pose pose, int lightCoords, int argb) {
+        QuadInstance instance = new QuadInstance();
+        instance.setColor(argb);
+        instance.setLightCoords(lightCoords);
+        instance.setOverlayCoords(OverlayTexture.NO_OVERLAY);
+        for (BakedQuad quad : quads) {
+            buffer.putBakedQuad(pose, quad, instance);
+        }
+    }
+
+    private static List<BakedQuad> getQuads(OBJModelData data, Set<String> parts, Set<String> ledParts) {
+        //Note: We need to use a new list to not accidentally pollute the cached baked quads with the LED quads that we match them with
         List<BakedQuad> quads = new ArrayList<>();
-        //Note: We need to use a new list to not accidentally pollute the cached bake quads with the LED quads that we match them with
-        // this also means that we can avoid even baking the data against empty part lists entirely
-        //TODO - 26.1 models
-        /*if (!parts.isEmpty()) {
-            quads.addAll(data.bake(new MekaSuitModelConfiguration(parts)).getQuads(null, null, random, ModelData.EMPTY, null));
+        for (String part : parts) {
+            quads.addAll(data.getQuads(part));
         }
-        if (!ledParts.isEmpty()) {
-            List<BakedQuad> ledQuads = data.bake(new MekaSuitModelConfiguration(ledParts)).getQuads(null, null, random, ModelData.EMPTY, null);
-            quads.addAll(QuadUtils.transformBakedQuads(ledQuads, QuadTransformation.fullbright));
+        for (String part : ledParts) {
+            for (BakedQuad quad : data.getQuads(part)) {
+                //Make the LEDs fully emissive
+                BakedQuad.MaterialInfo info = quad.materialInfo();
+                quads.add(new BakedQuad(quad.position0(), quad.position1(), quad.position2(), quad.position3(), quad.packedUV0(), quad.packedUV1(),
+                      quad.packedUV2(), quad.packedUV3(), quad.direction(), new BakedQuad.MaterialInfo(info.sprite(), info.layer(), info.itemRenderType(),
+                      info.tintIndex(), info.shade(), 15, info.ambientOcclusion()), quad.bakedNormals(), quad.bakedColors()));
+            }
         }
-        if (transform != null) {
-            quads = QuadUtils.transformBakedQuads(quads, transform);
-        }*/
         return quads;
     }
 
@@ -214,14 +226,14 @@ public class MekaSuitArmor implements ICustomArmor, ISpecialGear {
     }
 
     public enum ModelPos {
-        HEAD(BASE_TRANSFORM, s -> s.contains("head")),
-        BODY(BASE_TRANSFORM, s -> s.contains("body")),
-        LEFT_ARM(BASE_TRANSFORM.and(QuadTransformation.translate(-0.3125F, -0.125F, 0)), s -> s.contains("left_arm")),
-        RIGHT_ARM(BASE_TRANSFORM.and(QuadTransformation.translate(0.3125F, -0.125F, 0)), s -> s.contains("right_arm")),
-        LEFT_LEG(BASE_TRANSFORM.and(QuadTransformation.translate(-0.125F, -0.75F, 0)), s -> s.contains("left_leg")),
-        RIGHT_LEG(BASE_TRANSFORM.and(QuadTransformation.translate(0.125F, -0.75F, 0)), s -> s.contains("right_leg")),
-        LEFT_WING(BASE_TRANSFORM, s -> s.contains("left_wing")),
-        RIGHT_WING(BASE_TRANSFORM, s -> s.contains("right_wing"));
+        HEAD(0, 0, s -> s.contains("head")),
+        BODY(0, 0, s -> s.contains("body")),
+        LEFT_ARM(-0.3125F, -0.125F, s -> s.contains("left_arm")),
+        RIGHT_ARM(0.3125F, -0.125F, s -> s.contains("right_arm")),
+        LEFT_LEG(-0.125F, -0.75F, s -> s.contains("left_leg")),
+        RIGHT_LEG(0.125F, -0.75F, s -> s.contains("right_leg")),
+        LEFT_WING(0, 0, s -> s.contains("left_wing")),
+        RIGHT_WING(0, 0, s -> s.contains("right_wing"));
 
         private static final float EXPANDED_WING_X = 1;
         private static final float EXPANDED_WING_Y = -2.5F;
@@ -230,16 +242,21 @@ public class MekaSuitArmor implements ICustomArmor, ISpecialGear {
         private static final float EXPANDED_WING_Z_ROT = 25;
         public static final ModelPos[] VALUES = values();
 
-        private final QuadTransformation transform;
+        private final float xOffset;
+        private final float yOffset;
         private final Predicate<String> modelSpec;
 
-        ModelPos(QuadTransformation transform, Predicate<String> modelSpec) {
-            this.transform = transform;
+        ModelPos(float xOffset, float yOffset, Predicate<String> modelSpec) {
+            this.xOffset = xOffset;
+            this.yOffset = yOffset;
             this.modelSpec = modelSpec;
         }
 
-        public QuadTransformation getTransform() {
-            return transform;
+        /// Transforms the model space of the OBJ to be relative to this part. Equivalent to rotating the quads 180 degrees around the z-axis about
+        /// the center of the block, and then translating them by `(-1 + xOffset, 0.5 + yOffset, 0)`.
+        public void transform(PoseStack poseStack) {
+            poseStack.translate(xOffset, 1.5F + yOffset, 0);
+            poseStack.mulPose(Axis.ZP.rotationDegrees(180));
         }
 
         public boolean contains(String s) {
@@ -330,27 +347,26 @@ public class MekaSuitArmor implements ICustomArmor, ISpecialGear {
     }
 
     private static void processMekaTool(OBJModelData mekaToolModel, Set<String> ignored) {
-        //TODO - 26.1 models
-        /*for (String name : mekaToolModel.getModel().getRootComponentNames()) {
+        for (String name : mekaToolModel.getRootComponentNames()) {
             if (name.contains(OVERRIDDEN_TAG)) {
                 //Note: We just ignore the pieces here as the override will be rendered as part of the item's model
                 ignored.add(processOverrideName(name, "mekatool"));
             }
-        }*/
+        }
     }
 
-    private record OverrideData(MekanismModelData modelData, String name) {
+    private record OverrideData(OBJModelData modelData, String name) {
     }
 
     private ArmorQuads createQuads(Object2BooleanMap<ModuleModelSpec> modules, Set<EquipmentSlot> wornParts, boolean hasMekaToolLeft, boolean hasMekaToolRight) {
-        Map<MekanismModelData, Map<ModelPos, Set<String>>> specialQuadsToRender = new Object2ObjectOpenHashMap<>();
-        Map<MekanismModelData, Map<ModelPos, Set<String>>> specialLEDQuadsToRender = new Object2ObjectOpenHashMap<>();
+        Map<OBJModelData, Map<ModelPos, Set<String>>> specialQuadsToRender = new Object2ObjectOpenHashMap<>();
+        Map<OBJModelData, Map<ModelPos, Set<String>>> specialLEDQuadsToRender = new Object2ObjectOpenHashMap<>();
         // map of normal model part name to overwritten model part name (i.e. helmet_head_center1 -> override_solar_helmet_helmet_head_center1)
         Map<String, OverrideData> overrides = new Object2ObjectOpenHashMap<>();
         Set<String> ignored = new HashSet<>();
 
         if (!modules.isEmpty()) {
-            Map<MekanismModelData, Set<String>> allMatchedParts = new Object2ObjectOpenHashMap<>();
+            Map<OBJModelData, Set<String>> allMatchedParts = new Object2ObjectOpenHashMap<>();
             for (ModuleOBJModelData modelData : MekanismModelCache.INSTANCE.MEKASUIT_MODULES) {
                 Set<String> matchedParts = allMatchedParts.computeIfAbsent(modelData, d -> new HashSet<>());
                 for (ObjectIterator<Object2BooleanMap.Entry<ModuleModelSpec>> iterator = Object2BooleanMaps.fastIterator(modules); iterator.hasNext(); ) {
@@ -369,10 +385,10 @@ public class MekaSuitArmor implements ICustomArmor, ISpecialGear {
                     }
                 }
             }
-            for (Map.Entry<MekanismModelData, Set<String>> entry : allMatchedParts.entrySet()) {
+            for (Map.Entry<OBJModelData, Set<String>> entry : allMatchedParts.entrySet()) {
                 Set<String> matchedParts = entry.getValue();
                 if (!matchedParts.isEmpty()) {
-                    MekanismModelData modelData = entry.getKey();
+                    OBJModelData modelData = entry.getKey();
                     Map<ModelPos, Set<String>> quadsToRender = specialQuadsToRender.computeIfAbsent(modelData, d -> new EnumMap<>(ModelPos.class));
                     Map<ModelPos, Set<String>> ledQuadsToRender = specialLEDQuadsToRender.computeIfAbsent(modelData, d -> new EnumMap<>(ModelPos.class));
                     //For all the parts we matched, go through and try adding them, while respecting any overrides we might have
@@ -403,8 +419,7 @@ public class MekaSuitArmor implements ICustomArmor, ISpecialGear {
 
         Map<ModelPos, Set<String>> armorQuadsToRender = new EnumMap<>(ModelPos.class);
         Map<ModelPos, Set<String>> armorLEDQuadsToRender = new EnumMap<>(ModelPos.class);
-        //TODO - 26.1 models
-        /*for (String name : MekanismModelCache.INSTANCE.MEKASUIT.getModel().getRootComponentNames()) {
+        for (String name : MekanismModelCache.INSTANCE.MEKASUIT.getRootComponentNames()) {
             if (!checkEquipment(type, name)) {
                 // skip if it's the wrong equipment type
                 continue;
@@ -423,12 +438,12 @@ public class MekaSuitArmor implements ICustomArmor, ISpecialGear {
             } else if (!ignored.contains(name)) {
                 addQuadsToRender(pos, name, overrides, armorQuadsToRender, armorLEDQuadsToRender, specialQuadsToRender, specialLEDQuadsToRender);
             }
-        }*/
+        }
 
         Map<ModelPos, List<BakedQuad>> opaqueMap = new EnumMap<>(ModelPos.class);
         Map<ModelPos, List<BakedQuad>> transparentMap = new EnumMap<>(ModelPos.class);
         for (ModelPos pos : ModelPos.VALUES) {
-            for (MekanismModelData modelData : MekanismModelCache.INSTANCE.MEKASUIT_MODULES) {
+            for (OBJModelData modelData : MekanismModelCache.INSTANCE.MEKASUIT_MODULES) {
                 parseTransparency(modelData, pos, opaqueMap, transparentMap, specialQuadsToRender.getOrDefault(modelData, Collections.emptyMap()),
                       specialLEDQuadsToRender.getOrDefault(modelData, Collections.emptyMap()));
             }
@@ -438,15 +453,15 @@ public class MekaSuitArmor implements ICustomArmor, ISpecialGear {
     }
 
     private static void addQuadsToRender(ModelPos pos, String name, Map<String, OverrideData> overrides, Map<ModelPos, Set<String>> quadsToRender,
-          Map<ModelPos, Set<String>> ledQuadsToRender, Map<MekanismModelData, Map<ModelPos, Set<String>>> specialQuadsToRender,
-          Map<MekanismModelData, Map<ModelPos, Set<String>>> specialLEDQuadsToRender) {
+          Map<ModelPos, Set<String>> ledQuadsToRender, Map<OBJModelData, Map<ModelPos, Set<String>>> specialQuadsToRender,
+          Map<OBJModelData, Map<ModelPos, Set<String>>> specialLEDQuadsToRender) {
         OverrideData override = overrides.get(name);
         if (override != null) {
             //Update the name and the target quads if there is an override
             name = override.name();
             // Note: In theory the special quads should have our model data corresponding
             // to a map already, but on the off chance they don't compute and add it
-            MekanismModelData overrideData = override.modelData();
+            OBJModelData overrideData = override.modelData();
             quadsToRender = specialQuadsToRender.computeIfAbsent(overrideData, d -> new EnumMap<>(ModelPos.class));
             ledQuadsToRender = specialLEDQuadsToRender.computeIfAbsent(overrideData, d -> new EnumMap<>(ModelPos.class));
         }
@@ -457,7 +472,7 @@ public class MekaSuitArmor implements ICustomArmor, ISpecialGear {
         }
     }
 
-    private static void parseTransparency(MekanismModelData modelData, ModelPos pos, Map<ModelPos, List<BakedQuad>> opaqueMap, Map<ModelPos, List<BakedQuad>> transparentMap,
+    private static void parseTransparency(OBJModelData modelData, ModelPos pos, Map<ModelPos, List<BakedQuad>> opaqueMap, Map<ModelPos, List<BakedQuad>> transparentMap,
           Map<ModelPos, Set<String>> regularQuads, Map<ModelPos, Set<String>> ledQuads) {
         Set<String> opaqueRegularQuads = new HashSet<>(), opaqueLEDQuads = new HashSet<>();
         Set<String> transparentRegularQuads = new HashSet<>(), transparentLEDQuads = new HashSet<>();
@@ -467,9 +482,9 @@ public class MekaSuitArmor implements ICustomArmor, ISpecialGear {
         addParsedQuads(modelData, pos, transparentMap, transparentRegularQuads, transparentLEDQuads);
     }
 
-    private static void addParsedQuads(MekanismModelData modelData, ModelPos pos, Map<ModelPos, List<BakedQuad>> map, Set<String> quads, Set<String> ledQuads) {
+    private static void addParsedQuads(OBJModelData modelData, ModelPos pos, Map<ModelPos, List<BakedQuad>> map, Set<String> quads, Set<String> ledQuads) {
         //Only add a new entry to our map if we will have any quads. Our getQuads method will return empty if there are no quads
-        List<BakedQuad> bakedQuads = getQuads(modelData, quads, ledQuads, pos.getTransform());
+        List<BakedQuad> bakedQuads = getQuads(modelData, quads, ledQuads);
         if (!bakedQuads.isEmpty()) {
             map.computeIfAbsent(pos, p -> new ArrayList<>()).addAll(bakedQuads);
         }
@@ -520,7 +535,7 @@ public class MekaSuitArmor implements ICustomArmor, ISpecialGear {
         }
 
         public String processOverrideName(String part) {
-            return MekaSuitArmor.processOverrideName(part, name);
+            return MekaSuitArmorRenderer.processOverrideName(part, name);
         }
     }
 
@@ -592,8 +607,9 @@ public class MekaSuitArmor implements ICustomArmor, ISpecialGear {
         protected void reload(BakingCompleted evt) {
             super.reload(evt);
             Collection<ModuleModelSpec> modules = moduleModelSpec.values();
-            //TODO - 26.1 models
-            /*for (String name : getModel().getRootComponentNames()) {
+            //Clear any data from a previous reload, as we may have replaced the sets with immutable empty ones
+            specParts.clear();
+            for (String name : getRootComponentNames()) {
                 //Find the "best" spec by checking all the specs and finding out which one is listed first
                 // this way if we are overriding another module, then we just put the module that is overriding
                 // the other one first in the name so that it gets the spec matched to it
@@ -614,7 +630,7 @@ public class MekaSuitArmor implements ICustomArmor, ISpecialGear {
                         specData.active().add(name);
                     }
                 }
-            }*/
+            }
             //Update entries to reclaim some memory for empty sets
             for (Map.Entry<ModuleModelSpec, SpecData> entry : specParts.entrySet()) {
                 SpecData specData = entry.getValue();

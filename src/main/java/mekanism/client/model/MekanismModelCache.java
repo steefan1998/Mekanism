@@ -4,7 +4,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import mekanism.api.gear.IModuleHelper;
-import mekanism.client.render.armor.MekaSuitArmor.ModuleOBJModelData;
+import mekanism.client.render.armor.MekaSuitArmorRenderer.ModuleOBJModelData;
 import mekanism.client.render.transmitter.RenderTransmitterBase;
 import mekanism.common.Mekanism;
 import mekanism.common.tile.qio.TileEntityQIODriveArray.DriveStatus;
@@ -18,12 +18,13 @@ public class MekanismModelCache extends BaseModelCache {
     private final Set<Runnable> callbacks = new HashSet<>();
 
     public final OBJModelData MEKASUIT = registerOBJ("models/entity/mekasuit.obj");
-    public final OBJModelData MEKATOOL_LEFT_HAND = registerOBJ("models/entity/mekatool_left.obj");
-    public final OBJModelData MEKATOOL_RIGHT_HAND = registerOBJ("models/entity/mekatool_right.obj");
+    public final OBJModelData MEKATOOL_LEFT_HAND = registerOBJPartNames("models/entity/mekatool_left.obj");
+    public final OBJModelData MEKATOOL_RIGHT_HAND = registerOBJPartNames("models/entity/mekatool_right.obj");
     private final Set<ModuleOBJModelData> mekaSuitModules = new HashSet<>();
     public final Set<ModuleOBJModelData> MEKASUIT_MODULES = Collections.unmodifiableSet(mekaSuitModules);
 
-    public final OBJModelData TRANSMITTER_CONTENTS = register(RenderTransmitterBase.MODEL_LOCATION, rl -> new OBJModelData(rl) {
+    //TODO - 26.1 models: Bake the quads again once transmitter contents rendering is ported (the mtl for it has no texture so it is resolved when rendering)
+    public final OBJModelData TRANSMITTER_CONTENTS = register(RenderTransmitterBase.MODEL_LOCATION, rl -> new OBJModelData(rl, false) {
         @Override
         protected boolean useDiffuseLighting() {
             return false;

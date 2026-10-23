@@ -43,6 +43,9 @@ public class MekanismArmorLayer<STATE extends HumanoidRenderState, MODEL extends
             //TODO - 26.1: Fix this as it seems baby models now get handled via this
             //TODO - 26.1: Figure out baby vs not
             A coreModel = getArmorModel(state, slot);
+            //Note: Vanilla only sets up the animation of the armor model when it actually draws the submitted model,
+            // so we need to set it up ourselves to have the parts of the model be in the correct position for this entity
+            coreModel.setupAnim(state);
             model.render(coreModel, poseStack, nodeCollector, lightCoords, state, stack);
         }
     }

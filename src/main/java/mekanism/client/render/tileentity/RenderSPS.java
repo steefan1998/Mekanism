@@ -115,12 +115,12 @@ public class RenderSPS extends MultiblockTileEntityRenderer<SPSMultiblockData, T
             //TODO - 26.1: ProfilerConstants.SPS_CORE ?
             CORE.setPos(state.center);
             CORE.setScale(state.lerpEnergy(MIN_SCALE, MAX_SCALE));
-            //BillboardingEffectRenderer.render(CORE, camera, renderer, poseStack, renderTick, partialTick);
+            //BillboardEffectRenderer.render(CORE, camera, renderer, poseStack, renderTick, partialTick);
         }
 
         //TODO - 26.1: ProfilerConstants.SPS_ORBIT ?
         /*for (SPSOrbitEffect effect : sps.orbitEffects) {
-            BillboardingEffectRenderer.render(effect, camera, renderer, poseStack, renderTick, partialTick);
+            BillboardEffectRenderer.render(effect, camera, renderer, poseStack, renderTick, partialTick);
         }*/
         poseStack.popPose();
     }

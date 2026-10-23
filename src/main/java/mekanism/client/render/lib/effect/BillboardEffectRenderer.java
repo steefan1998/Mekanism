@@ -11,9 +11,10 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
-public class BillboardingEffectRenderer {
+//Note: Not named BillboardingEffectRenderer so that Iris' outdated (1.21.1) @Pseudo compat mixin skips this class instead of crashing on load
+public class BillboardEffectRenderer {
 
-    private BillboardingEffectRenderer() {
+    private BillboardEffectRenderer() {
     }
 
     public static void render(CustomEffect effect, CameraRenderState camera, MultiBufferSource renderer, PoseStack poseStack, int renderTick, float partialTick) {

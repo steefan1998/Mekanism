@@ -1,0 +1,14 @@
+{
+  "layers": {
+    "humanoid": [
+      {
+        "texture": "mekanismtools:refined_obsidian"
+      }
+    ],
+    "humanoid_leggings": [
+      {
+        "texture": "mekanismtools:refined_obsidian"
+      }
+    ]
+  }
+}

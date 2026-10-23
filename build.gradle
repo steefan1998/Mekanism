@@ -298,7 +298,7 @@ def setupTasks(SourceSet sourceSet) {
 group = 'mekanism'
 def basicVersion = "${mod_version}." + (System.getenv('BUILD_NUMBER') ?: 'homebaked')
 version = "${minecraft_version}-${basicVersion}"
-project.base.archivesName = 'Mekanism'
+project.base.archivesName = 'mekanismunofficial-gsedit'
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of("${java_version}"))
@@ -628,7 +628,7 @@ def secondaryJar(SourceSet sourceSet, String title) {
         archiveClassifier.set(sourceSet.name)
         from(sourceSet.output)
         if (!title.isEmpty()) {
-            archiveFileName.set("${title}-${project.version}.jar")
+            archiveFileName.set("${project.base.archivesName.get()}-${sourceSet.name}-${project.version}.jar")
         }
         manifest.attributes(getManifestAttributes(title.isEmpty() ? 'Mekanism' : title))
     }

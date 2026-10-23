@@ -3,7 +3,7 @@ package mekanism.client.render.entity;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import mekanism.client.render.MekanismRenderType;
-import mekanism.client.render.entity.RenderFlame.FlameRenderState;
+import mekanism.client.render.entity.FlameEntityRenderer.FlameRenderState;
 import mekanism.common.entity.EntityFlame;
 import mekanism.common.util.MekanismUtils;
 import mekanism.common.util.MekanismUtils.ResourceType;
@@ -17,13 +17,14 @@ import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.ARGB;
 
-public class RenderFlame extends EntityRenderer<EntityFlame, FlameRenderState> {
+//Note: Not named RenderFlame so that Iris' outdated (1.21.1) @Pseudo compat mixin skips this class instead of crashing on load
+public class FlameEntityRenderer extends EntityRenderer<EntityFlame, FlameRenderState> {
 
     private static final Identifier TEXTURE = MekanismUtils.getResource(ResourceType.RENDER, "flame.png");
 
     private final FlameModel model;
 
-    public RenderFlame(EntityRendererProvider.Context context) {
+    public FlameEntityRenderer(EntityRendererProvider.Context context) {
         super(context);
         this.model = new FlameModel(context.bakeLayer(FlameModel.FLAME_LAYER));
     }
