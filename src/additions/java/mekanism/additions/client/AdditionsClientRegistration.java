@@ -2,10 +2,13 @@ package mekanism.additions.client;
 
 import java.util.Map;
 import mekanism.additions.client.model.AdditionsModelCache;
+import mekanism.additions.client.model.BabySkeletonModels;
 import mekanism.additions.client.model.ModelBabyCreeper;
 import mekanism.additions.client.model.ModelBabyEnderman;
+import mekanism.additions.client.render.entity.RenderBabyBogged;
 import mekanism.additions.client.render.entity.RenderBabyCreeper;
 import mekanism.additions.client.render.entity.RenderBabyEnderman;
+import mekanism.additions.client.render.entity.RenderBabySkeleton;
 import mekanism.additions.client.render.entity.RenderBalloon;
 import mekanism.additions.common.MekanismAdditions;
 import mekanism.additions.common.registries.AdditionsBlocks;
@@ -15,11 +18,7 @@ import mekanism.client.ClientRegistrationUtil;
 import mekanism.common.registration.impl.BlockRegistryObject;
 import net.minecraft.client.model.geom.builders.CubeDeformation;
 import net.minecraft.client.model.monster.enderman.EndermanModel;
-import net.minecraft.client.renderer.entity.BoggedRenderer;
-import net.minecraft.client.renderer.entity.SkeletonRenderer;
-import net.minecraft.client.renderer.entity.StrayRenderer;
 import net.minecraft.client.renderer.entity.TntRenderer;
-import net.minecraft.client.renderer.entity.WitherSkeletonRenderer;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -45,12 +44,12 @@ public class AdditionsClientRegistration {
         //Register entity rendering handlers
         event.registerEntityRenderer(AdditionsEntityTypes.OBSIDIAN_TNT.get(), TntRenderer::new);
         event.registerEntityRenderer(AdditionsEntityTypes.BALLOON.get(), RenderBalloon::new);
-        event.registerEntityRenderer(AdditionsEntityTypes.BABY_BOGGED.get(), BoggedRenderer::new);
+        event.registerEntityRenderer(AdditionsEntityTypes.BABY_BOGGED.get(), RenderBabyBogged::new);
         event.registerEntityRenderer(AdditionsEntityTypes.BABY_CREEPER.get(), RenderBabyCreeper::new);
         event.registerEntityRenderer(AdditionsEntityTypes.BABY_ENDERMAN.get(), RenderBabyEnderman::new);
-        event.registerEntityRenderer(AdditionsEntityTypes.BABY_SKELETON.get(), SkeletonRenderer::new);
-        event.registerEntityRenderer(AdditionsEntityTypes.BABY_STRAY.get(), StrayRenderer::new);
-        event.registerEntityRenderer(AdditionsEntityTypes.BABY_WITHER_SKELETON.get(), WitherSkeletonRenderer::new);
+        event.registerEntityRenderer(AdditionsEntityTypes.BABY_SKELETON.get(), RenderBabySkeleton::skeleton);
+        event.registerEntityRenderer(AdditionsEntityTypes.BABY_STRAY.get(), RenderBabySkeleton::stray);
+        event.registerEntityRenderer(AdditionsEntityTypes.BABY_WITHER_SKELETON.get(), RenderBabySkeleton::witherSkeleton);
     }
 
     @SubscribeEvent
@@ -60,6 +59,8 @@ public class AdditionsClientRegistration {
         event.registerLayerDefinition(ModelBabyCreeper.ARMOR_LAYER, () -> ModelBabyCreeper.createBodyLayer(new CubeDeformation(1)));
 
         event.registerLayerDefinition(ModelBabyEnderman.BABY_ENDERMAN_LAYER, () -> EndermanModel.createBodyLayer().apply(ModelBabyEnderman.BABY_MODEL_TRANSFORM));
+
+        BabySkeletonModels.registerLayers(event);
     }
 
     @SubscribeEvent
